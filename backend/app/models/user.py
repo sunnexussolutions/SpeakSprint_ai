@@ -5,13 +5,15 @@ from typing import List, Optional
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..core.database import get_db
 from ..core.userdb import User
 from ..core.security import get_current_user, require_admin
+from .attempt import Attempt
+from .transcript import SpeechTranscript
 
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
@@ -85,6 +87,9 @@ async def delete_user(user_id: int, db: Session = Depends(get_db), _admin: User 
 	if user.is_admin:
 		raise HTTPException(status_code=400, detail="Admin users cannot be deleted here")
 
+	# Clean up any child records first to ensure foreign key safety
+	db.execute(delete(Attempt).where(Attempt.user_id == user_id))
+	db.execute(delete(SpeechTranscript).where(SpeechTranscript.user_id == user_id))
 	db.delete(user)
 	db.commit()
 	return None

@@ -1,6 +1,6 @@
 """Core application package."""
 from .database import Base, get_db, SessionLocal, create_all_tables
-from .userdb import User, initialize_admin_user
+from .userdb import User, initialize_admin_user, ensure_foreign_key_cascades
 from .topicdb import Topic
 from .speechdb import TextModel
 from .settingsdb import (
@@ -19,6 +19,7 @@ __all__ = [
     "create_all_tables",
     "User",
     "initialize_admin_user",
+    "ensure_foreign_key_cascades",
     "Topic",
     "TextModel",
     "AppSetting",

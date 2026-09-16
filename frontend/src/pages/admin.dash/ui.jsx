@@ -593,6 +593,56 @@ function ManagementPage({ page }) {
   const [timerSaving, setTimerSaving] = useState(false);
   const [timerForm, setTimerForm] = useState("60");
   const [isTimerOpen, setIsTimerOpen] = useState(false);
+  const [viewingItem, setViewingItem] = useState(null);
+  const [actionMenu, setActionMenu] = useState(null);
+  const [toastMessage, setToastMessage] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+
+  useEffect(() => {
+    const handleDocumentClick = () => setActionMenu(null);
+    document.addEventListener("click", handleDocumentClick);
+    return () => document.removeEventListener("click", handleDocumentClick);
+  }, []);
+
+  const showToast = (message) => {
+    setToastMessage(message);
+    setTimeout(() => setToastMessage(""), 2500);
+  };
+
+  const copyRowData = (item, cols) => {
+    const payload = {};
+    cols.forEach((col, idx) => {
+      payload[col] = item.values[idx] || "-";
+    });
+    if (item.raw?.transcript) payload["Full Transcript"] = item.raw.transcript;
+    if (item.raw?.evaluation?.feedback) payload["AI Feedback"] = item.raw.evaluation.feedback;
+    navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+    showToast("Record details copied to clipboard!");
+  };
+
+  const deleteAttempt = async (attemptId) => {
+    if (!window.confirm(`Delete attempt #${attemptId}?`)) return;
+    try {
+      const response = await authFetch(`/api/v1/attempts/${attemptId}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("Unable to delete attempt");
+      setAttemptRows((current) => current.filter((row) => row.id !== attemptId));
+      showToast("Attempt deleted successfully");
+    } catch (err) {
+      alert(err.message || "Failed to delete attempt");
+    }
+  };
+
+  const deleteTranscript = async (transcriptId) => {
+    if (!window.confirm(`Delete record #${transcriptId}?`)) return;
+    try {
+      const response = await authFetch(`/api/v1/transcripts/${transcriptId}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("Unable to delete record");
+      setAnalysisRows((current) => current.filter((row) => row.id !== transcriptId));
+      showToast("Record deleted successfully");
+    } catch (err) {
+      alert(err.message || "Failed to delete record");
+    }
+  };
 
   useEffect(() => {
     if (page !== "users") return;
@@ -614,7 +664,7 @@ function ManagementPage({ page }) {
   }, [page]);
 
   useEffect(() => {
-    if (page !== "challenges" && page !== "users" && page !== "attempts" && page !== "leaderboard" && page !== "speech-analysis" && page !== "ai-feedback") return;
+    if (page !== "challenges" && page !== "topics" && page !== "users" && page !== "attempts" && page !== "leaderboard" && page !== "speech-analysis" && page !== "ai-feedback") return;
 
     if (page === "attempts" || page === "leaderboard" || page === "speech-analysis" || page === "ai-feedback") {
       const loadAttempts = async () => {
@@ -629,6 +679,7 @@ function ManagementPage({ page }) {
               const analysis = item.analysis || {};
               return {
                 id: item.id,
+                raw: item,
                 values: page === "speech-analysis"
                   ? [item.learner || `User #${item.user_id}`, `${Math.round(skills.fluency || 0)}%`, `${Math.round(skills.grammar || 0)}%`, `${analysis.words_per_minute || 0} WPM`, `${Math.round(skills.topic_relevance || 0)}%`]
                   : [item.learner || `User #${item.user_id}`, item.topic || "General practice", item.evaluation?.feedback || "No feedback", `${Math.round(item.evaluation?.overall_score || 0)}/100`, "Complete"],
@@ -639,6 +690,7 @@ function ManagementPage({ page }) {
           }
           const nextAttemptRows = attempts.map((attempt) => ({
             id: attempt.id,
+            raw: attempt,
             values: [
               attempt.learner,
               attempt.challenge,
@@ -684,6 +736,7 @@ function ManagementPage({ page }) {
           const nextUserRows = users.map((user) => ({
               id: user.id,
               isAdmin: user.is_admin,
+              raw: user,
               values: [
                 `${user.username || "Unnamed user"} - ${user.email}`,
                 user.domain || "Independent",
@@ -719,6 +772,7 @@ function ManagementPage({ page }) {
         const topics = await response.json();
         const nextChallengeRows = topics.map((topic) => ({
             id: topic.id,
+            raw: topic,
             values: [
               topic.topic_name,
               topic.description || "General",
@@ -1080,8 +1134,8 @@ function ManagementPage({ page }) {
     },
   };
   const config = configs[page] || configs.users;
-  const rows =
-    page === "challenges"
+  const rawRows =
+    page === "challenges" || page === "topics"
       ? challengeRows
       : page === "users"
         ? userRows
@@ -1091,9 +1145,16 @@ function ManagementPage({ page }) {
             ? leaderboardRows
               : page === "speech-analysis" || page === "ai-feedback"
                 ? analysisRows
-        : [];
+        : (configs[page]?.rows || []).map((r, i) => ({ id: `${page}-${i}`, values: r }));
+
+  const rows = rawRows.filter((entry) => {
+    if (!searchTerm.trim()) return true;
+    const term = searchTerm.toLowerCase();
+    return entry.values.some((val) => String(val).toLowerCase().includes(term));
+  });
+
   const loading =
-    page === "challenges"
+    page === "challenges" || page === "topics"
       ? topicsLoading
       : page === "users"
         ? usersLoading
@@ -1105,7 +1166,7 @@ function ManagementPage({ page }) {
               ? attemptsLoading
         : false;
   const loadError =
-    page === "challenges"
+    page === "challenges" || page === "topics"
       ? topicsError
       : page === "users"
         ? usersError
@@ -1140,8 +1201,25 @@ function ManagementPage({ page }) {
           <button
             className="admin-export-button"
             onClick={() => {
-              if (page === "challenges") setIsCreateOpen(true);
-              if (page === "users") setIsUserCreateOpen(true);
+              if (page === "challenges" || page === "topics") { setIsCreateOpen(true); return; }
+              if (page === "users") { setIsUserCreateOpen(true); return; }
+              if (page === "attempts" || page === "leaderboard") {
+                if (!rows.length) { showToast("No data to export."); return; }
+                const cols = config.columns;
+                const csvRows = [cols.join(","), ...rows.map((r) => r.values.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))];
+                const blob = new Blob([csvRows.join("\n")], { type: "text/csv" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url; a.download = `${page}-export.csv`; a.click();
+                URL.revokeObjectURL(url);
+                showToast("CSV exported successfully!");
+                return;
+              }
+              if (page === "speech-analysis" || page === "ai-feedback") {
+                showToast("Report view is not yet configured.");
+                return;
+              }
+              showToast(`${config.action} — coming soon.`);
             }}
           >
             + {config.action}
@@ -1151,10 +1229,14 @@ function ManagementPage({ page }) {
       <div className="admin-toolbar">
         <label>
           <Icon name="search" size={16} />
-          <input placeholder={`Search ${config.title.toLowerCase()}...`} />
+          <input
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            placeholder={`Search ${config.title.toLowerCase()}...`}
+          />
         </label>
-        <button>All statuses ⌄</button>
-        <button>Newest first ⌄</button>
+        <button type="button">All statuses ⌄</button>
+        <button type="button">Newest first ⌄</button>
       </div>
       <article className="admin-card admin-management-card">
         <table>
@@ -1196,27 +1278,114 @@ function ManagementPage({ page }) {
                         </span>
                       </td>
                     ))}
-                    <td>
-                      {page === "challenges" ? (
-                        <button
-                          className="admin-row-action admin-delete-action"
-                          onClick={() => deleteChallenge(entry.id, values[0])}
+                    <td className="admin-actions-cell">
+                      <button
+                        type="button"
+                        className="admin-row-action"
+                        onClick={() =>
+                          setViewingItem({
+                            id: entry.id,
+                            title: config.title,
+                            columns: config.columns,
+                            values,
+                            raw: entry.raw,
+                          })
+                        }
+                      >
+                        View
+                      </button>
+                      <button
+                        type="button"
+                        className="admin-row-action"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setActionMenu(
+                            actionMenu?.id === entry.id
+                              ? null
+                              : { id: entry.id, entry, values }
+                          );
+                        }}
+                      >
+                        •••
+                      </button>
+                      {actionMenu?.id === entry.id && (
+                        <div
+                          className="admin-dropdown-menu"
+                          onClick={(event) => event.stopPropagation()}
                         >
-                          Delete
-                        </button>
-                      ) : page === "users" ? (
-                        <button
-                          className="admin-row-action admin-delete-action"
-                          disabled={entry.isAdmin}
-                          onClick={() => deleteUser(entry.id, values[0])}
-                        >
-                          {entry.isAdmin ? "Admin" : "Delete"}
-                        </button>
-                      ) : (
-                        <>
-                          <button className="admin-row-action">View</button>
-                          <button className="admin-row-action">•••</button>
-                        </>
+                          <button
+                            type="button"
+                            className="admin-dropdown-item"
+                            onClick={() => {
+                              setViewingItem({
+                                id: entry.id,
+                                title: config.title,
+                                columns: config.columns,
+                                values,
+                                raw: entry.raw,
+                              });
+                              setActionMenu(null);
+                            }}
+                          >
+                            <Icon name="search" size={13} /> View Details
+                          </button>
+                          <button
+                            type="button"
+                            className="admin-dropdown-item"
+                            onClick={() => {
+                              copyRowData(entry, config.columns);
+                              setActionMenu(null);
+                            }}
+                          >
+                            <Icon name="card" size={13} /> Copy Details
+                          </button>
+                          {page === "challenges" || page === "topics" ? (
+                            <button
+                              type="button"
+                              className="admin-dropdown-item admin-dropdown-delete"
+                              onClick={() => {
+                                setActionMenu(null);
+                                deleteChallenge(entry.id, values[0]);
+                              }}
+                            >
+                              <Icon name="logout" size={13} /> Delete Challenge
+                            </button>
+                          ) : page === "users" ? (
+                            <button
+                              type="button"
+                              className="admin-dropdown-item admin-dropdown-delete"
+                              disabled={entry.isAdmin}
+                              onClick={() => {
+                                setActionMenu(null);
+                                deleteUser(entry.id, values[0]);
+                              }}
+                            >
+                              <Icon name="logout" size={13} /> {entry.isAdmin ? "Admin User" : "Delete User"}
+                            </button>
+                          ) : page === "attempts" ? (
+                            <button
+                              type="button"
+                              className="admin-dropdown-item admin-dropdown-delete"
+                              onClick={() => {
+                                setActionMenu(null);
+                                deleteAttempt(entry.id);
+                              }}
+                            >
+                              <Icon name="logout" size={13} /> Delete Attempt
+                            </button>
+                          ) : page === "speech-analysis" || page === "ai-feedback" ? (
+                            <button
+                              type="button"
+                              className="admin-dropdown-item admin-dropdown-delete"
+                              onClick={() => {
+                                setActionMenu(null);
+                                deleteTranscript(entry.id);
+                              }}
+                            >
+                              <Icon name="logout" size={13} /> Delete Record
+                            </button>
+                          ) : null}
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -1485,6 +1654,82 @@ function ManagementPage({ page }) {
               </p>
             </form>
           </section>
+        </div>
+      )}
+      {viewingItem && (
+        <div
+          className="admin-modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) =>
+            event.target === event.currentTarget && setViewingItem(null)
+          }
+        >
+          <section
+            className="admin-modal"
+            style={{ maxWidth: "520px", width: "92vw" }}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="admin-modal-header">
+              <div>
+                <h2>{viewingItem.title ? viewingItem.title.replace(/s$/, "") : "Record"} Details</h2>
+                <p>Record ID: #{viewingItem.id}</p>
+              </div>
+              <button
+                type="button"
+                className="admin-modal-close"
+                onClick={() => setViewingItem(null)}
+                aria-label="Close dialog"
+              >
+                ×
+              </button>
+            </div>
+            <div className="admin-view-details-grid">
+              {viewingItem.columns.map((col, index) => (
+                <div className="admin-view-detail-card" key={col}>
+                  <span>{col}</span>
+                  <strong>{viewingItem.values[index] || "-"}</strong>
+                </div>
+              ))}
+              {viewingItem.raw?.transcript && (
+                <div className="admin-view-detail-card admin-view-full-card">
+                  <span>Full Speech Transcript</span>
+                  <strong style={{ whiteSpace: "pre-wrap", fontWeight: "normal", fontSize: "11px", lineHeight: "1.5" }}>
+                    {viewingItem.raw.transcript}
+                  </strong>
+                </div>
+              )}
+              {viewingItem.raw?.evaluation?.feedback && (
+                <div className="admin-view-detail-card admin-view-full-card">
+                  <span>AI Coaching Feedback</span>
+                  <strong style={{ whiteSpace: "pre-wrap", fontWeight: "normal", fontSize: "11px", lineHeight: "1.5" }}>
+                    {viewingItem.raw.evaluation.feedback}
+                  </strong>
+                </div>
+              )}
+            </div>
+            <div className="admin-modal-actions">
+              <button
+                type="button"
+                className="admin-modal-cancel"
+                onClick={() => setViewingItem(null)}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                className="admin-export-button"
+                onClick={() => copyRowData(viewingItem, viewingItem.columns)}
+              >
+                Copy Details
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {toastMessage && (
+        <div className="admin-toast-banner" role="status">
+          ✓ {toastMessage}
         </div>
       )}
     </div>

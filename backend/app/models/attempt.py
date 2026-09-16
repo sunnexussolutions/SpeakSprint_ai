@@ -21,8 +21,8 @@ class Attempt(Base):
     __tablename__ = "attempts"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    topic_id = Column(Integer, ForeignKey("topics.id"), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    topic_id = Column(Integer, ForeignKey("topics.id", ondelete="SET NULL"), nullable=True, index=True)
     score = Column(Float, nullable=True)
     duration_seconds = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
@@ -130,3 +130,14 @@ async def create_attempt(
     db.refresh(attempt)
 
     return _format_attempt(attempt, user.username or user.email, topic.topic_name if topic else None)
+ 
+ 
+@router.delete("/{attempt_id}", status_code=204)
+async def delete_attempt(attempt_id: int, db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
+    attempt = db.scalar(select(Attempt).where(Attempt.id == attempt_id))
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+    db.delete(attempt)
+    db.commit()
+    return None
+

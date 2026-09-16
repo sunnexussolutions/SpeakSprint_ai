@@ -40,6 +40,27 @@ def ensure_domain_column():
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE users ADD COLUMN presence_status VARCHAR(20) DEFAULT 'logged_out' NOT NULL"))
 
+def ensure_foreign_key_cascades():
+    """Ensure attempts and speech_transcripts foreign keys cascade when users are deleted."""
+    if not inspect(engine).has_table("users"):
+        return
+    try:
+        with engine.begin() as connection:
+            # Check and update attempts -> users foreign key
+            connection.execute(text("""
+                ALTER TABLE attempts DROP CONSTRAINT IF EXISTS attempts_user_id_fkey;
+                ALTER TABLE attempts ADD CONSTRAINT attempts_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+                
+                ALTER TABLE speech_transcripts DROP CONSTRAINT IF EXISTS speech_transcripts_user_id_fkey;
+                ALTER TABLE speech_transcripts ADD CONSTRAINT speech_transcripts_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+                
+                ALTER TABLE attempts DROP CONSTRAINT IF EXISTS attempts_topic_id_fkey;
+                ALTER TABLE attempts ADD CONSTRAINT attempts_topic_id_fkey FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE SET NULL;
+            """))
+    except Exception as exc:
+        print(f"Foreign key cascade check note: {exc}")
+
+
 def initialize_admin_user():
     """Create the initial admin user in the database if it does not exist."""
     from .database import get_db

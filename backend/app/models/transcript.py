@@ -20,7 +20,7 @@ class SpeechTranscript(Base):
     __tablename__ = "speech_transcripts"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     transcript = Column(Text, nullable=False)
     duration_seconds = Column(Integer, nullable=False, default=0)
     topic = Column(Text, nullable=True)
@@ -176,3 +176,14 @@ async def get_all_transcripts_for_admin(
         .order_by(SpeechTranscript.created_at.desc())
     ).all()
     return [_response(item, username or email) for item, username, email in rows]
+
+
+@router.delete("/{transcript_id}", status_code=204)
+async def delete_transcript(transcript_id: int, db: Session = Depends(get_db), _admin: User = Depends(require_admin)):
+    transcript = db.scalar(select(SpeechTranscript).where(SpeechTranscript.id == transcript_id))
+    if not transcript:
+        raise HTTPException(status_code=404, detail="Transcript not found")
+    db.delete(transcript)
+    db.commit()
+    return None
+
