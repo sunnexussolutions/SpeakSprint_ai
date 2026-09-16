@@ -9,7 +9,7 @@ from typing import Optional, List
 # Import database components
 from ..core.topicdb import Topic
 from ..core.database import get_db
-from ..core.security import get_current_user, require_admin
+from ..core.security import require_admin
 
 # Create router
 router = APIRouter(prefix="/api/v1", tags=["topics"])
@@ -35,14 +35,14 @@ class TopicResponse(TopicBase):
 
 # API Routes
 @router.get("/topics", response_model=List[TopicResponse])
-async def get_topics(db: Session = Depends(get_db), _user=Depends(get_current_user)):
-    """Get all topics"""
+async def get_topics(db: Session = Depends(get_db)):
+    """Get all topics — public, no authentication required."""
     topics = db.scalars(select(Topic)).all()
     return topics
 
 
 @router.get("/topics/{topic_id}", response_model=TopicResponse)
-async def get_topic(topic_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)):
+async def get_topic(topic_id: int, db: Session = Depends(get_db)):
     """Get a specific topic by ID"""
     topic = db.scalar(select(Topic).where(Topic.id == topic_id))
     if not topic:

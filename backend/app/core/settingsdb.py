@@ -34,10 +34,6 @@ def initialize_default_settings():
                 )
             )
             db.commit()
-        elif existing.value == 60:
-            existing.value = DEFAULT_SESSION_DURATION_SECONDS
-            existing.updated_at = datetime.utcnow()
-            db.commit()
     finally:
         db.close()
 def get_session_duration_seconds() -> int:

@@ -55,7 +55,8 @@ const SpinWheel = () => {
 	useEffect(() => {
 		const loadTopics = async () => {
 			try {
-				const response = await authFetch("/api/v1/topics");
+				const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+				const response = await fetch(`${API_BASE_URL}/api/v1/topics`, { cache: "no-store" });
 				if (!response.ok) return;
 				const data = await response.json();
 				const adminTopics = data
