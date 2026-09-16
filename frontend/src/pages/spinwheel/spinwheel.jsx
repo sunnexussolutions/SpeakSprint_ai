@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { selectedTopic, topics as defaultTopics } from "./topics";
 import useSpeechToText from "../../hooks/useSpeechToText";
 import "./spinwheel.css";
-import { authFetch } from "../../lib/api";
+import { API_BASE_URL } from "../../lib/api";
 
 const formatTime = (seconds) => {
 	const minutes = Math.floor(seconds / 60).toString().padStart(2, "0");
@@ -41,7 +41,7 @@ const SpinWheel = () => {
 		try {
 			const savedTranscript = await saveTranscript({
 				userId: selectedUserId,
-				durationSeconds: (sessionDuration || 60) - seconds,
+				durationSeconds: (sessionDuration || 120) - seconds,
 				topic: selected.title,
 			});
 			if (!savedTranscript) throw new Error("No transcript was available to save");
@@ -55,7 +55,6 @@ const SpinWheel = () => {
 	useEffect(() => {
 		const loadTopics = async () => {
 			try {
-				const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 				const response = await fetch(`${API_BASE_URL}/api/v1/topics`, { cache: "no-store" });
 				if (!response.ok) return;
 				const data = await response.json();
@@ -77,12 +76,14 @@ const SpinWheel = () => {
 	useEffect(() => {
 		const loadSessionDuration = async () => {
 			try {
-				const response = await authFetch("/api/v1/settings/session-duration");
+				const response = await fetch(`${API_BASE_URL}/api/v1/settings/session-duration`, { cache: "no-store" });
 				if (!response.ok) return;
 				const data = await response.json();
-				const nextDuration = Number(data.session_duration_seconds || 120);
-				setSessionDuration(nextDuration);
-				setSeconds(nextDuration);
+				const nextDuration = Number(data.session_duration_seconds);
+				if (nextDuration > 0) {
+					setSessionDuration(nextDuration);
+					setSeconds(nextDuration);
+				}
 			} catch (error) {
 				console.warn("Unable to load timer duration", error);
 			}
@@ -158,7 +159,7 @@ const SpinWheel = () => {
 			return;
 		}
 		setSaveNotice(null);
-		if (seconds === 0) setSeconds(sessionDuration || 60);
+		if (seconds === 0) setSeconds(sessionDuration || 120);
 		await start();
 		setIsPaused(false);
 	};
@@ -219,7 +220,7 @@ const SpinWheel = () => {
 						</div>
 							<div className="recording-info">
 								{transcript && <p className="speech-transcript" aria-live="polite">{transcript}</p>}
-							<div className="recording-status"><strong>{formatTime((sessionDuration || 60) - seconds)}</strong><small>{isRecording ? "Recording..." : "Ready to record"}</small></div>
+							<div className="recording-status"><strong>{formatTime((sessionDuration || 120) - seconds)}</strong><small>{isRecording ? "Recording..." : "Ready to record"}</small></div>
 								<div className="recording-actions"><button className="primary-button start-recording-button" onClick={toggleRecording} disabled={isRecording}>▶ Start</button><button className="secondary-button" onClick={() => setIsPaused((value) => !value)} disabled={!isRecording}>{isPaused ? "▶ Resume" : "Ⅱ Pause"}</button><button className="stop-button" onClick={() => { stopAndSave(); setIsPaused(false); }}>■ Stop</button></div>
 						</div>
 					</div>

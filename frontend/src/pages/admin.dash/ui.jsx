@@ -962,6 +962,8 @@ function ManagementPage({ page }) {
       const nextSeconds = Number(data.session_duration_seconds || value);
       setTimerSeconds(nextSeconds);
       setTimerForm(String(nextSeconds));
+      showToast(`Session timer updated to ${nextSeconds} seconds`);
+      setIsTimerOpen(false);
     } catch (error) {
       setTimerError(error.message);
     } finally {
